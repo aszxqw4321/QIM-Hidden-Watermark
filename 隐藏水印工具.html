@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QIM 水印系统</title>
+    <!-- 引入 JSZip 用于纯前端批量打包 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root { --primary: #2563eb; --primary-hover: #1d4ed8; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; --dark: #1e293b; --bg: #f1f5f9; --border: #e2e8f0; }
+        * { box-sizing: border-box; outline: none; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #334155; line-height: 1.5; }
+        .container { max-width: 1350px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; position: relative; }
+        
+        /* 头部样式与 PS 按钮 */
+        .header { background: var(--dark); padding: 25px 20px; text-align: center; color: white; position: relative; }
+        .header h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 700; letter-spacing: 0.5px; }
+        .header p { margin: 0; color: #94a3b8; font-size: 14px; }
+        .ps-guide-btn { position: absolute; right: 25px; top: 30px; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .ps-guide-btn:hover { background: rgba(255,255,255,0.25); transform: translateY(-1px); }
+
+        .tabs { display: flex; background: #fff; border-bottom: 1px solid var(--border); }
+        .tab-btn { flex: 1; background: none; border: none; padding: 18px 20px; font-size: 16px; font-weight: 600; color: #64748b; cursor: pointer; transition: 0.3s; }
+        .tab-btn:hover { background: #f8fafc; color: var(--dark); }
+        .tab-btn.active { color: var(--primary); box-shadow: inset 0 -3px 0 var(--primary); background: #eff6ff; }
+
+        .panel { display: none; padding: 25px; animation: fadeIn 0.3s ease; }
+        .panel.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .grid-layout { display: grid; grid-template-columns: 380px 1fr; gap: 25px; }
+        @media (max-width: 950px) { .grid-layout { grid-template-columns: 1fr; } }
+
+        .sidebar { background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 18px; max-height: calc(100vh - 180px); overflow-y: auto;}
+        
+        .section-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+        .section-title::before { content: ''; display: block; width: 4px; height: 14px; background: var(--primary); border-radius: 2px; }
+        
+        .control-group label.lbl-title { display: block; font-weight: 600; margin-bottom: 8px; color: #475569; font-size: 13px; }
+        input[type="text"] { width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; transition: 0.2s; background: #fff; font-weight: 500; }
+        input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        input[type="range"] { width: 100%; padding: 10px 0; }
+        input[type="file"] { display: none; }
+        
+        .range-wrap { display: flex; align-items: center; gap: 12px; }
+        .range-wrap input { flex: 1; cursor: pointer; }
+        .range-val { font-family: monospace; background: #e2e8f0; padding: 4px 8px; border-radius: 6px; font-size: 12px; min-width: 55px; text-align: center; font-weight: 600; color: #334155; }
+
+        /* 动态变量 UI */
+        .var-tags-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .var-tag { background: #e2e8f0; color: #475569; font-size: 12px; padding: 4px 10px; border-radius: 12px; cursor: pointer; transition: 0.2s; font-weight: 600; border: 1px solid transparent; user-select: none; }
+        .var-tag:hover { background: #cbd5e1; color: var(--dark); transform: translateY(-1px); }
+        .checkbox-group { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #334155; font-weight: 600; cursor: pointer; background: #fff; padding: 10px 12px; border-radius: 8px; border: 1px solid #cbd5e1; transition: 0.2s; }
+        .checkbox-group:hover { border-color: #94a3b8; }
+        .checkbox-group input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); margin: 0; }
+        
+        .preview-text-box { margin-top: 10px; padding: 10px; background: #1e293b; color: #38bdf8; font-family: monospace; font-size: 12px; border-radius: 6px; word-break: break-all; display: none; }
+
+        .btn-group { display: flex; gap: 10px; }
+        .btn { flex: 1; padding: 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; border: none; transition: 0.2s; color: white; display: flex; justify-content: center; align-items: center; gap: 6px; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-upload { background: var(--dark); } .btn-upload:hover:not(:disabled) { background: #0f172a; }
+        .btn-primary { background: var(--primary); } .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+        .btn-success { background: var(--success); } .btn-success:hover:not(:disabled) { background: #059669; }
+        .btn-warning { background: var(--warning); } .btn-warning:hover:not(:disabled) { background: #d97706; }
+
+        .score-board { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; margin-top: 5px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);}
+        .psnr-val { font-size: 24px; font-weight: 800; color: var(--success); font-family: monospace; margin: 4px 0;}
+
+        .queue-container { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; max-height: 140px; overflow-y: auto; }
+        .queue-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; cursor: pointer; transition: 0.1s; }
+        .queue-item:hover { background: #f8fafc; }
+        .queue-item.active { background: #eff6ff; border-left: 3px solid var(--primary); padding-left: 9px; }
+        .queue-info { display: flex; flex-direction: column; overflow: hidden; }
+        .queue-name { font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+        .queue-meta { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+        .queue-remove { color: #cbd5e1; cursor: pointer; font-size: 18px; line-height: 1; padding: 0 5px; }
+        .queue-remove:hover { color: var(--danger); }
+
+        .canvas-area { position: relative; border: 2px dashed #cbd5e1; border-radius: 12px; display: flex; align-items: center; justify-content: center; min-height: 680px; background: #f8fafc; overflow: hidden; transition: 0.2s; }
+        .canvas-area.drag-over { border-color: var(--primary); background: #eff6ff; }
+        .canvas-area.dark { background: #0f172a; border-color: #334155; }
+        canvas { max-width: 100%; max-height: 80vh; object-fit: contain; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        #encCanvas, #encVerifyCanvas { display: none; }
+        
+        .empty-state { text-align: center; color: #94a3b8; pointer-events: none; }
+        .empty-state svg { width: 48px; height: 48px; margin-bottom: 10px; opacity: 0.5; }
+        
+        .loader-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.8); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 50; backdrop-filter: blur(2px); }
+        .loader-overlay.dark-mode { background: rgba(15,23,42,0.8); color: white; }
+        .spinner { border: 3px solid #e2e8f0; border-top: 3px solid var(--primary); border-radius: 50%; width: 36px; height: 36px; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+
+        .view-switch { position: absolute; top: 15px; right: 15px; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); padding: 5px; border-radius: 10px; display: flex; gap: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); z-index: 20; border: 1px solid #e2e8f0; }
+        .view-switch-btn { padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 6px; transition: 0.2s; color: #64748b; }
+        .view-switch-btn.active { background: var(--primary); color: white; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+
+        #compareWrap { display: none; position: relative; width: 100%; height: 100%; align-items: center; justify-content: center; }
+        #compBox { position: relative; display: inline-block; max-width: 100%; max-height: 80vh; }
+        #compOrigCanvas { display: block; max-width: 100%; max-height: 80vh; }
+        #compEncCanvas { display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%; clip-path: inset(0 0 0 50%); pointer-events: none; }
+        #compSlider { position: absolute; top: 0; left: 50%; width: 3px; height: 100%; background: white; cursor: ew-resize; z-index: 10; transform: translateX(-50%); box-shadow: 0 0 6px rgba(0,0,0,0.4); }
+        .slider-handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 34px; height: 34px; background: white; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: #334155;}
+
+        /* PS Modal 模态框样式 */
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); display: none; z-index: 999; justify-content: center; align-items: center; animation: fadeIn 0.2s ease; }
+        .modal { background: #fff; width: 90%; max-width: 650px; border-radius: 16px; padding: 30px; position: relative; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .modal h2 { margin-top: 0; color: var(--dark); border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;}
+        .modal-close { position: absolute; top: 20px; right: 20px; font-size: 28px; line-height: 1; cursor: pointer; color: #94a3b8; transition: 0.2s; }
+        .modal-close:hover { color: var(--danger); }
+        .ps-step { margin-bottom: 15px; padding: 15px; background: #f8fafc; border-radius: 8px; border-left: 4px solid var(--primary); }
+        .ps-step h4 { margin: 0 0 6px 0; color: var(--primary); font-size: 15px; }
+        .ps-step p { margin: 0; font-size: 13px; color: #475569; line-height: 1.6;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>QIM 水印系统</h1>
+        <p>动态追踪 · 错位防拼图排版 · 智能画质评估</p>
+        
+        <!-- 恢复的 PS 指南按钮 -->
+        <button id="openPsModal" class="ps-guide-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="3"/></svg>
+            PS提取教程
+        </button>
+    </div>
+    
+    <div class="tabs">
+        <button class="tab-btn active" data-target="encodePanel">✍️ 第一步：注入追踪水印</button>
+        <button class="tab-btn" data-target="decodePanel">🔍 第二步：暴力提取</button>
+    </div>
+
+    <!-- ================= 注入面板 ================= -->
+    <div id="encodePanel" class="panel active">
+        <div class="grid-layout">
+            <div class="sidebar">
+                <!-- 导入 -->
+                <div>
+                    <label for="encUpload" class="btn btn-upload" style="width: 100%;">📁 导入图片 (支持拖拽/多选)</label>
+                    <input type="file" id="encUpload" accept="image/*" multiple>
+                    <div class="queue-container" id="encQueueList" style="margin-top: 10px;">
+                        <div style="color: #94a3b8; font-size: 12px; text-align: center; padding: 20px;">队列为空</div>
+                    </div>
+                </div>
+
+                <!-- 核心：动态溯源文本控制 -->
+                <div style="background: #eff6ff; padding: 15px; border-radius: 10px; border: 1px solid #bfdbfe;">
+                    <div class="control-group">
+                        <label class="lbl-title" style="color: #1e3a8a;">🛡️ 溯源追踪内容 (支持动态变量)</label>
+                        <input type="text" id="watermarkText" value="机密文件 严禁外传" placeholder="输入水印文字">
+                        
+                        <div class="var-tags-wrap">
+                            <span class="var-tag" data-insert="{filename}">+ 原文件名</span>
+                            <span class="var-tag" data-insert="{index}">+ 队列序号</span>
+                            <span class="var-tag" data-insert="{time}">+ 具体时间</span>
+                        </div>
+
+                        <label class="checkbox-group">
+                            <input type="checkbox" id="appendDateCheck" checked>
+                            <span>默认附加当前日期 (YYYY-MM-DD)</span>
+                        </label>
+                        
+                        <div id="realtimePreviewText" class="preview-text-box"></div>
+                    </div>
+                </div>
+
+                <!-- 排版与参数 -->
+                <div>
+                    <div class="section-title">高维排版与隐蔽参数</div>
+                    <div class="control-group" style="margin-top: 10px;">
+                        <label class="lbl-title">排版疏密程度 (密度)</label>
+                        <div class="range-wrap">
+                            <input type="range" id="densitySlider" min="1" max="5" value="3">
+                            <span class="range-val" id="valDensity">标准</span>
+                        </div>
+                    </div>
+                    <div class="control-group" style="margin-top: 10px;">
+                        <label class="lbl-title">文字大小倍率</label>
+                        <div class="range-wrap">
+                            <input type="range" id="sizeSlider" min="50" max="250" value="100" step="10">
+                            <span class="range-val" id="valSize">1.0x</span>
+                        </div>
+                    </div>
+                    <div class="control-group" style="margin-top: 10px;">
+                        <label class="lbl-title">排版旋转倾角</label>
+                        <div class="range-wrap">
+                            <input type="range" id="angleSlider" min="-90" max="90" value="-30" step="5">
+                            <span class="range-val" id="valAngle">-30°</span>
+                        </div>
+                    </div>
+                    <div class="control-group" style="margin-top: 10px; padding-top: 15px; border-top: 1px dashed #cbd5e1;">
+                        <label class="lbl-title" title="步长越大越抗JPG压缩，但色彩微变越明显。">QIM 调制步长 (抗压缩强度)</label>
+                        <div class="range-wrap">
+                            <input type="range" id="qimStepSlider" min="10" max="100" value="40" step="2">
+                            <span class="range-val" id="valQimStep">40</span>
+                        </div>
+                    </div>
+                    
+                    <div class="score-board">
+                        <div style="font-size:12px; color:#64748b; font-weight: 600;">画质损伤评估 (PSNR)</div>
+                        <div id="psnrScore" class="psnr-val">-- dB</div>
+                        <div id="psnrDesc" style="font-size:12px; color:#475569;">正在等待渲染...</div>
+                    </div>
+                </div>
+
+                <!-- 导出 -->
+                <div style="margin-top: auto;">
+                    <div class="section-title">导出操作</div>
+                    <div class="btn-group" style="margin-bottom: 10px;">
+                        <button id="encSinglePngBtn" class="btn btn-primary" disabled>💾 存单图 (PNG)</button>
+                        <button id="encSingleJpgBtn" class="btn btn-warning" disabled>💾 存单图 (JPG)</button>
+                    </div>
+                    <div class="btn-group">
+                        <button id="encBatchPngBtn" class="btn btn-success" disabled>📦 批量发版 ZIP (PNG)</button>
+                        <button id="encBatchJpgBtn" class="btn btn-upload" disabled>📦 批量发版 ZIP (JPG)</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 画板 -->
+            <div class="canvas-area" id="encDropZone">
+                <div class="view-switch" id="encViewSwitch" style="display: none;">
+                    <div class="view-switch-btn active" id="btnViewNormal">原图无损视觉</div>
+                    <div class="view-switch-btn" id="btnViewCompare">🔍 前后细节对比</div>
+                    <div class="view-switch-btn" id="btnViewDecoded">👁️ 预览提取效果</div>
+                </div>
+
+                <div class="loader-overlay" id="encLoader">
+                    <div class="spinner"></div>
+                    <span id="encProgressText" style="font-weight: 600; color: var(--primary);">实时光栅渲染中...</span>
+                </div>
+                <div class="empty-state" id="encPlaceholder">
+                    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                    <div>拖拽商业图片到这里<br>支持快捷键 Ctrl+V 粘贴</div>
+                </div>
+                
+                <canvas id="encCanvas"></canvas>
+                <canvas id="encVerifyCanvas"></canvas>
+                <div id="compareWrap">
+                    <div id="compBox">
+                        <canvas id="compOrigCanvas"></canvas>
+                        <canvas id="compEncCanvas"></canvas>
+                        <div id="compSlider">
+                            <div class="slider-handle">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 解析面板 ================= -->
+    <div id="decodePanel" class="panel">
+        <div class="grid-layout">
+            <div class="sidebar">
+                <div>
+                    <label for="decUpload" class="btn btn-upload" style="width: 100%;">📁 导入图片 (支持拖拽/多选)</label>
+                    <input type="file" id="decUpload" accept="image/*" multiple>
+                    <div class="queue-container" id="decQueueList" style="margin-top: 10px;">
+                        <div style="color: #94a3b8; font-size: 12px; text-align: center; padding: 20px;">队列为空</div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="section-title">解密滤波控制台</div>
+                    <button id="btnAutoDecode" class="btn btn-warning" style="width: 100%; margin-bottom: 15px;">✨ 开启 AI 智能参数寻优 (Otsu算法)</button>
+                    
+                    <div class="control-group">
+                        <label class="lbl-title">阈值过滤门槛 (剔除背景杂波)</label>
+                        <div class="range-wrap">
+                            <input type="range" id="thresholdSlider" min="40" max="98" value="65">
+                            <span class="range-val" id="valThreshold">0.65</span>
+                        </div>
+                    </div>
+                    <div class="control-group" style="margin-top: 15px;">
+                        <label class="lbl-title">空间降噪平滑 (对抗JPEG碎片化)</label>
+                        <div class="range-wrap">
+                            <input type="range" id="blurSlider" min="0" max="8" value="2">
+                            <span class="range-val" id="valBlur">半径 2</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: auto;">
+                    <div class="section-title">导出法医凭证</div>
+                    <button id="decSingleBtn" class="btn btn-primary" style="width:100%; margin-bottom: 10px;" disabled>💾 保存当前解密图 (单图)</button>
+                    <button id="decBatchBtn" class="btn btn-success" style="width:100%;" disabled>📦 批量解密并下载 ZIP</button>
+                </div>
+            </div>
+
+            <div class="canvas-area dark" id="decDropZone">
+                <div class="loader-overlay dark-mode" id="decLoader">
+                    <div class="spinner" style="border-top-color: var(--warning);"></div>
+                    <span id="decProgressText" style="font-weight: 600;">急速破译中...</span>
+                </div>
+                <div class="empty-state" id="decPlaceholder">
+                    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    <div>解密显影区域<br>拖动左侧滑块，隐形文字将浮现</div>
+                </div>
+                <canvas id="decCanvas" style="display: none;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================= 恢复的 PS 指南弹窗 ================= -->
+<div class="modal-backdrop" id="psModal">
+    <div class="modal">
+        <span class="modal-close" id="closePsModal">&times;</span>
+        <h2>🎨 PS 人工提取指南</h2>
+        <p style="color: #64748b; font-size: 13px; margin-bottom: 20px;">
+            当受到极度严重的压缩、截图或屏摄破坏，导致本系统 AI 算法无法自动寻优时，您可以尝试使用 Adobe Photoshop 进行硬核的人工提取。
+        </p>
+        
+        <div class="ps-step">
+            <h4>第一步：分离色彩通道</h4>
+            <p>在 PS 中打开受损图片。在右侧面板找到<strong>“通道 (Channels)”</strong>选项卡。关闭 RGB、红、绿通道的小眼睛，<strong>仅保留“蓝 (Blue)”通道可见并选中。</strong>（因为本系统采用 QIM 算法，将水印隐藏在人眼最不敏感的蓝通道 LSB 位中）</p>
+        </div>
+        <div class="ps-step">
+            <h4>第二步：色调均化 / 极限拉伸</h4>
+            <p>在顶部菜单栏选择：<strong>图像 (Image) -> 调整 (Adjustments) -> 色调均化 (Equalize)</strong>。此时画面会变成高反差的黑白噪点图，水印文字的轮廓通常会初步显现。</p>
+        </div>
+        <div class="ps-step">
+            <h4>第三步：高斯模糊降噪 (对抗 JPEG 碎片)</h4>
+            <p>如果经过上一步画面噪点过多难以辨认文字（常见于微信原图发送或 JPG 压缩），请选择：<strong>滤镜 (Filter) -> 模糊 (Blur) -> 高斯模糊 (Gaussian Blur)</strong>，将半径设置为 <strong>1.5 ~ 3.0 像素</strong> 进行平滑处理。</p>
+        </div>
+        <div class="ps-step">
+            <h4>第四步：阈值二值化显影</h4>
+            <p>最后，选择：<strong>图像 (Image) -> 调整 (Adjustments) -> 阈值 (Threshold)</strong>。左右拖动下方的阈值滑块，直到隐藏的文字最清晰、背景最干净地浮现出来即可保存为取证材料。</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // === 基础交互与 UI 状态 ===
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const panels = document.querySelectorAll('.panel');
+    let currentMode = 'encode'; 
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            panels.forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(btn.dataset.target).classList.add('active');
+            currentMode = btn.dataset.target === 'encodePanel' ? 'encode' : 'decode';
+        });
+    });
+
+    // PS Modal 交互逻辑
+    const psModal = document.getElementById('psModal');
+    document.getElementById('openPsModal').addEventListener('click', () => {
+        psModal.style.display = 'flex';
+    });
+    document.getElementById('closePsModal').addEventListener('click', () => {
+        psModal.style.display = 'none';
+    });
+    psModal.addEventListener('click', (e) => {
+        if (e.target === psModal) psModal.style.display = 'none';
+    });
+
+    function bindSlider(id, valId, suffix = '', divisor = 1) {
+        const el = document.getElementById(id);
+        const valEl = document.getElementById(valId);
+        el.addEventListener('input', () => {
+            valEl.textContent = (el.value / divisor).toFixed(divisor > 1 ? 2 : 0) + suffix;
+        });
+    }
+    bindSlider('qimStepSlider', 'valQimStep');
+    bindSlider('thresholdSlider', 'valThreshold', '', 100);
+    bindSlider('blurSlider', 'valBlur', ' px', 1);
+    bindSlider('sizeSlider', 'valSize', 'x', 100);
+    bindSlider('angleSlider', 'valAngle', '°', 1);
+
+    document.getElementById('densitySlider').addEventListener('input', (e) => {
+        const labels = {1:'极疏', 2:'较疏', 3:'标准', 4:'较密', 5:'极密'};
+        document.getElementById('valDensity').textContent = labels[parseInt(e.target.value)];
+    });
+
+    // === 队列数据系统 ===
+    let encQueue = [];
+    let decQueue = [];
+    let encActiveIndex = -1;
+    let decActiveIndex = -1;
+
+    function handleFilesUpload(files, mode) {
+        if (!files || files.length === 0) return;
+        const queue = mode === 'encode' ? encQueue : decQueue;
+        for (let i = 0; i < files.length; i++) {
+            if (files[i].type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        queue.push({ name: files[i].name, img: img, width: img.width, height: img.height });
+                        renderQueue(mode);
+                        let activeIdx = mode === 'encode' ? encActiveIndex : decActiveIndex;
+                        if (activeIdx === -1) selectQueueItem(mode, queue.length - 1);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(files[i]);
+            }
+        }
+    }
+
+    function renderQueue(mode) {
+        const queue = mode === 'encode' ? encQueue : decQueue;
+        const listEl = document.getElementById(mode === 'encode' ? 'encQueueList' : 'decQueueList');
+        const activeIdx = mode === 'encode' ? encActiveIndex : decActiveIndex;
+        
+        if (queue.length === 0) {
+            listEl.innerHTML = '<div style="color: #94a3b8; font-size: 12px; text-align: center; padding: 20px;">队列为空</div>';
+            toggleButtons(mode, false);
+            if(mode === 'encode') {
+                document.getElementById('encViewSwitch').style.display = 'none';
+                document.getElementById('realtimePreviewText').style.display = 'none';
+            }
+            return;
+        }
+
+        toggleButtons(mode, true);
+        if(mode === 'encode') document.getElementById('encViewSwitch').style.display = 'flex';
+        listEl.innerHTML = '';
+        
+        queue.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = `queue-item ${index === activeIdx ? 'active' : ''}`;
+            div.innerHTML = `
+                <div class="queue-info">
+                    <span class="queue-name" title="${item.name}">${index + 1}. ${item.name}</span>
+                    <span class="queue-meta">${item.width} x ${item.height} px</span>
+                </div>
+                <span class="queue-remove" onclick="removeQueueItem('${mode}', ${index}); event.stopPropagation();" title="移除">&times;</span>
+            `;
+            div.onclick = () => selectQueueItem(mode, index);
+            listEl.appendChild(div);
+        });
+    }
+
+    function selectQueueItem(mode, index) {
+        const queue = mode === 'encode' ? encQueue : decQueue;
+        if (!queue[index]) return;
+        if (mode === 'encode') {
+            encActiveIndex = index;
+            triggerLiveEncode();
+        } else {
+            decActiveIndex = index;
+            initDecodeImage(queue[index].img);
+        }
+        renderQueue(mode);
+    }
+
+    function removeQueueItem(mode, index) {
+        const queue = mode === 'encode' ? encQueue : decQueue;
+        queue.splice(index, 1);
+        let activeIdx = mode === 'encode' ? encActiveIndex : decActiveIndex;
+        if (index === activeIdx) {
+            if (queue.length > 0) selectQueueItem(mode, 0);
+            else {
+                if(mode === 'encode') { 
+                    encActiveIndex = -1; 
+                    document.getElementById('encCanvas').style.display = 'none';
+                    document.getElementById('encVerifyCanvas').style.display = 'none';
+                    document.getElementById('compareWrap').style.display = 'none';
+                    document.getElementById('encPlaceholder').style.display = 'block';
+                    document.getElementById('psnrScore').textContent = '-- dB';
+                    document.getElementById('psnrDesc').textContent = '队列空';
+                    document.getElementById('realtimePreviewText').style.display = 'none';
+                }
+                else { 
+                    decActiveIndex = -1; 
+                    document.getElementById('decCanvas').style.display = 'none';
+                    document.getElementById('decPlaceholder').style.display = 'block'; 
+                }
+                renderQueue(mode);
+            }
+        } else if (index < activeIdx) {
+            if(mode === 'encode') encActiveIndex--; else decActiveIndex--;
+            renderQueue(mode);
+        } else {
+            renderQueue(mode);
+        }
+    }
+
+    function toggleButtons(mode, enabled) {
+        if (mode === 'encode') {
+            document.getElementById('encSinglePngBtn').disabled = !enabled;
+            document.getElementById('encSingleJpgBtn').disabled = !enabled;
+            document.getElementById('encBatchPngBtn').disabled = !enabled;
+            document.getElementById('encBatchJpgBtn').disabled = !enabled;
+        } else {
+            document.getElementById('decSingleBtn').disabled = !enabled;
+            document.getElementById('decBatchBtn').disabled = !enabled;
+        }
+    }
+
+    document.getElementById('encUpload').addEventListener('change', e => handleFilesUpload(e.target.files, 'encode'));
+    document.getElementById('decUpload').addEventListener('change', e => handleFilesUpload(e.target.files, 'decode'));
+
+    function setupDrag(zoneId, mode) {
+        const zone = document.getElementById(zoneId);
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+        zone.addEventListener('dragleave', e => { e.preventDefault(); zone.classList.remove('drag-over'); });
+        zone.addEventListener('drop', e => {
+            e.preventDefault(); zone.classList.remove('drag-over');
+            if(mode === 'encode' && currentMode !== 'encode') tabBtns[0].click();
+            if(mode === 'decode' && currentMode !== 'decode') tabBtns[1].click();
+            handleFilesUpload(e.dataTransfer.files, mode);
+        });
+    }
+    setupDrag('encDropZone', 'encode');
+    setupDrag('decDropZone', 'decode');
+    
+    window.addEventListener('paste', e => {
+        if (e.clipboardData && e.clipboardData.files.length > 0) {
+            e.preventDefault();
+            handleFilesUpload(e.clipboardData.files, currentMode);
+        }
+    });
+
+    // === 动态变量字符串解析器 ===
+    function parseWatermarkText(baseText, fileItem, index) {
+        let text = baseText;
+        if (document.getElementById('appendDateCheck').checked) {
+            text += " {date}";
+        }
+        
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        
+        let filename = '未命名图片';
+        if (fileItem && fileItem.name) {
+            const lastDot = fileItem.name.lastIndexOf('.');
+            filename = lastDot > 0 ? fileItem.name.substring(0, lastDot) : fileItem.name;
+        }
+        
+        const idxStr = String((index !== undefined ? index : 0) + 1).padStart(3, '0');
+
+        return text.replace(/\{filename\}/g, filename)
+                   .replace(/\{date\}/g, dateStr)
+                   .replace(/\{time\}/g, timeStr)
+                   .replace(/\{index\}/g, idxStr);
+    }
+
+    document.querySelectorAll('.var-tag').forEach(tag => {
+        tag.addEventListener('click', () => {
+            const input = document.getElementById('watermarkText');
+            const insertVal = tag.getAttribute('data-insert');
+            input.value = (input.value + ' ' + insertVal).trim();
+            triggerLiveEncode();
+        });
+    });
+
+    // === 核心算法引擎 ===
+    function processEncodeData(imgData, width, height, text, step, density, sizeMult, angleDeg) {
+        const wmCanvas = document.createElement('canvas');
+        wmCanvas.width = width; wmCanvas.height = height;
+        const wmCtx = wmCanvas.getContext('2d');
+        wmCtx.fillStyle = '#000000'; wmCtx.fillRect(0, 0, width, height);
+        wmCtx.fillStyle = '#FFFFFF';
+        
+        const baseFontSize = Math.max(20, Math.floor(width / (18 - density * 2))); 
+        const fontSize = baseFontSize * sizeMult;
+        wmCtx.font = `900 ${fontSize}px "Arial Black", sans-serif`;
+        wmCtx.textAlign = 'center'; wmCtx.textBaseline = 'middle';
+
+        const angle = angleDeg * Math.PI / 180;
+        const spacingFactor = 2.5 - (density * 0.3);
+        const stepX = fontSize * Math.max(10, text.length) * 0.7; 
+        const stepY = fontSize * spacingFactor;
+        const diagonal = Math.sqrt(width * width + height * height);
+        
+        wmCtx.translate(width / 2, height / 2); wmCtx.rotate(angle);
+        
+        let row = 0;
+        for (let y = -diagonal; y < diagonal; y += stepY) { 
+            let offsetX = (row % 2 !== 0) ? (stepX / 2) : 0;
+            for (let x = -diagonal - offsetX; x < diagonal; x += stepX) { 
+                wmCtx.fillText(text, x, y); 
+            }
+            row++;
+        }
+        wmCtx.setTransform(1, 0, 0, 1, 0, 0);
+
+        const wm = wmCtx.getImageData(0, 0, width, height).data;
+        const targetRemainder = Math.floor(step / 2);
+        
+        let mse = 0;
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            if (wm[i] > 128 && imgData.data[i+3] > 10) {
+                let oldB = imgData.data[i+2];
+                let newB = Math.floor(oldB / step) * step + targetRemainder;
+                let finalB = Math.min(255, newB);
+                
+                imgData.data[i+2] = finalB;
+                let db = oldB - finalB;
+                mse += db * db;
+            }
+        }
+        
+        mse /= (width * height * 3);
+        let psnr = mse === 0 ? 99.99 : 10 * Math.log10((255 * 255) / mse);
+
+        return { data: imgData, psnr: psnr };
+    }
+
+    function calculateDecodeScores(imgData, width, height, step, blurRadius) {
+        const src = imgData.data;
+        const targetRemainder = Math.floor(step / 2);
+        const maxDist = step / 2;
+        let scores = new Float32Array(width * height);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let i = (y * width + x) * 4;
+                if (src[i+3] < 10) { scores[y * width + x] = 0; continue; }
+                let rem = src[i+2] % step;
+                let dist = Math.abs(rem - targetRemainder);
+                scores[y * width + x] = 1.0 - (dist / maxDist);
+            }
+        }
+
+        let blurredScores = new Float32Array(width * height);
+        if (blurRadius > 0) {
+            let tempScores = new Float32Array(width * height);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let sum = 0, count = 0;
+                    for (let dx = -blurRadius; dx <= blurRadius; dx++) {
+                        let nx = x + dx; if (nx >= 0 && nx < width) { sum += scores[y * width + nx]; count++; }
+                    }
+                    tempScores[y * width + x] = sum / count;
+                }
+            }
+            for (let x = 0; x < width; x++) {
+                for (let y = 0; y < height; y++) {
+                    let sum = 0, count = 0;
+                    for (let dy = -blurRadius; dy <= blurRadius; dy++) {
+                        let ny = y + dy; if (ny >= 0 && ny < height) { sum += tempScores[ny * width + x]; count++; }
+                    }
+                    blurredScores[y * width + x] = sum / count;
+                }
+            }
+        } else {
+            for(let i=0; i<scores.length; i++) blurredScores[i] = scores[i];
+        }
+        return blurredScores;
+    }
+
+    function processDecodeData(imgData, width, height, step, threshold, blurRadius) {
+        let blurredScores = calculateDecodeScores(imgData, width, height, step, blurRadius);
+        const outputData = new ImageData(width, height);
+        const dst = outputData.data;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let score = blurredScores[y * width + x];
+                let i = (y * width + x) * 4;
+                let outColor = score > threshold ? 255 : 0;
+                dst[i] = dst[i+1] = dst[i+2] = outColor;
+                dst[i+3] = 255; 
+            }
+        }
+        return outputData;
+    }
+
+    function getOtsuThreshold(scores) {
+        let hist = new Int32Array(256);
+        for (let i=0; i<scores.length; i++) {
+            let val = Math.floor(scores[i] * 255);
+            if(val < 0) val = 0; if(val > 255) val = 255;
+            hist[val]++;
+        }
+        let total = scores.length;
+        let sum = 0;
+        for (let t=0; t<256; t++) sum += t * hist[t];
+        
+        let sumB = 0, wB = 0, wF = 0, varMax = 0, threshold = 0;
+        for (let t=0; t<256; t++) {
+            wB += hist[t];
+            if (wB === 0) continue;
+            wF = total - wB;
+            if (wF === 0) break;
+            
+            sumB += t * hist[t];
+            let mB = sumB / wB;
+            let mF = (sum - sumB) / wF;
+            let varBetween = wB * wF * (mB - mF) * (mB - mF);
+            
+            if (varBetween > varMax) {
+                varMax = varBetween;
+                threshold = t;
+            }
+        }
+        return Math.max(0.60, Math.min(0.98, (threshold / 255) + 0.1)); 
+    }
+
+    // === 注入端视图控制引擎 ===
+    const encCanvas = document.getElementById('encCanvas');
+    const encCtx = encCanvas.getContext('2d', { willReadFrequently: true });
+    const encVerifyCanvas = document.getElementById('encVerifyCanvas');
+    const encVerifyCtx = encVerifyCanvas.getContext('2d', { willReadFrequently: true });
+    
+    let encodeTimer = null;
+    let latestEncodedData = null; 
+    let currentEncodeView = 'normal';
+
+    function switchEncodeView(view) {
+        currentEncodeView = view;
+        document.getElementById('btnViewNormal').classList.toggle('active', view === 'normal');
+        document.getElementById('btnViewCompare').classList.toggle('active', view === 'compare');
+        document.getElementById('btnViewDecoded').classList.toggle('active', view === 'decoded');
+        
+        encCanvas.style.display = view === 'normal' ? 'block' : 'none';
+        encVerifyCanvas.style.display = view === 'decoded' ? 'block' : 'none';
+        document.getElementById('compareWrap').style.display = view === 'compare' ? 'flex' : 'none';
+        document.getElementById('encDropZone').classList.toggle('dark', view === 'decoded');
+
+        if (view === 'decoded') updateVerifyCanvas();
+        if (view === 'compare') updateCompareCanvas();
+    }
+
+    document.getElementById('btnViewNormal').addEventListener('click', () => switchEncodeView('normal'));
+    document.getElementById('btnViewCompare').addEventListener('click', () => switchEncodeView('compare'));
+    document.getElementById('btnViewDecoded').addEventListener('click', () => switchEncodeView('decoded'));
+
+    function updateVerifyCanvas() {
+        if (!latestEncodedData) return;
+        encVerifyCanvas.width = encCanvas.width;
+        encVerifyCanvas.height = encCanvas.height;
+        const step = parseInt(document.getElementById('qimStepSlider').value);
+        const resData = processDecodeData(latestEncodedData, encCanvas.width, encCanvas.height, step, 0.65, 2);
+        encVerifyCtx.putImageData(resData, 0, 0);
+    }
+
+    function updateCompareCanvas() {
+        if (!latestEncodedData || encActiveIndex === -1) return;
+        const img = encQueue[encActiveIndex].img;
+        const origCvs = document.getElementById('compOrigCanvas');
+        const encCvs = document.getElementById('compEncCanvas');
+        
+        origCvs.width = img.width; origCvs.height = img.height;
+        encCvs.width = img.width; encCvs.height = img.height;
+        
+        origCvs.getContext('2d').drawImage(img, 0, 0);
+        encCvs.getContext('2d').putImageData(latestEncodedData, 0, 0);
+    }
+
+    const compBox = document.getElementById('compBox');
+    const compSlider = document.getElementById('compSlider');
+    const compEncCanvas = document.getElementById('compEncCanvas');
+    let isCompDragging = false;
+
+    compSlider.addEventListener('mousedown', (e) => { isCompDragging = true; e.preventDefault(); });
+    window.addEventListener('mouseup', () => isCompDragging = false);
+    window.addEventListener('mousemove', (e) => {
+        if (!isCompDragging) return;
+        const rect = compBox.getBoundingClientRect();
+        let percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+        compSlider.style.left = `${percent}%`;
+        compEncCanvas.style.clipPath = `inset(0 0 0 ${percent}%)`;
+    });
+
+    function updatePSNRDisplay(psnr) {
+        const psnrEl = document.getElementById('psnrScore');
+        const psnrDesc = document.getElementById('psnrDesc');
+        psnrEl.textContent = psnr.toFixed(2) + ' dB';
+        
+        if (psnr > 45) {
+            psnrEl.style.color = 'var(--success)';
+            psnrDesc.textContent = '画质极佳，肉眼完全无法分辨修改痕迹';
+        } else if (psnr > 38) {
+            psnrEl.style.color = '#3b82f6';
+            psnrDesc.textContent = '画质优秀，基本不影响图像整体观感';
+        } else if (psnr > 30) {
+            psnrEl.style.color = 'var(--warning)';
+            psnrDesc.textContent = '画质一般，大面积纯色可能出现轻微噪点';
+        } else {
+            psnrEl.style.color = 'var(--danger)';
+            psnrDesc.textContent = '画质受损，噪点较明显，建议调低抗压强度';
+        }
+    }
+
+    function triggerLiveEncode() {
+        if (encActiveIndex === -1) return;
+        clearTimeout(encodeTimer);
+        
+        encodeTimer = setTimeout(() => {
+            document.getElementById('encLoader').style.display = 'flex';
+            
+            setTimeout(() => {
+                const fileItem = encQueue[encActiveIndex];
+                const img = fileItem.img;
+                encCanvas.width = img.width; encCanvas.height = img.height;
+                encCtx.drawImage(img, 0, 0);
+                
+                const baseText = document.getElementById('watermarkText').value;
+                const finalParsedText = parseWatermarkText(baseText, fileItem, encActiveIndex);
+                
+                const previewBox = document.getElementById('realtimePreviewText');
+                previewBox.style.display = 'block';
+                previewBox.innerHTML = `当前渲染文本：<br><span style="color:#fff; font-size:14px; font-weight:bold;">${finalParsedText}</span>`;
+
+                const step = parseInt(document.getElementById('qimStepSlider').value);
+                const density = parseInt(document.getElementById('densitySlider').value);
+                const sizeMult = parseInt(document.getElementById('sizeSlider').value) / 100;
+                const angleDeg = parseInt(document.getElementById('angleSlider').value);
+                
+                let origImageData = encCtx.getImageData(0, 0, img.width, img.height);
+                let result = processEncodeData(origImageData, img.width, img.height, finalParsedText, step, density, sizeMult, angleDeg);
+                
+                latestEncodedData = result.data;
+                encCtx.putImageData(latestEncodedData, 0, 0);
+                
+                updatePSNRDisplay(result.psnr);
+                
+                if (currentEncodeView === 'decoded') updateVerifyCanvas();
+                if (currentEncodeView === 'compare') updateCompareCanvas();
+                
+                document.getElementById('encPlaceholder').style.display = 'none';
+                document.getElementById('encLoader').style.display = 'none';
+                
+                switchEncodeView(currentEncodeView);
+            }, 30);
+        }, 100); 
+    }
+
+    ['watermarkText', 'densitySlider', 'qimStepSlider', 'sizeSlider', 'angleSlider', 'appendDateCheck'].forEach(id => {
+        document.getElementById(id).addEventListener('input', triggerLiveEncode);
+        if(id === 'appendDateCheck') document.getElementById(id).addEventListener('change', triggerLiveEncode);
+    });
+
+    // === 解析端控制器 ===
+    const decCanvas = document.getElementById('decCanvas');
+    const decCtx = decCanvas.getContext('2d', { willReadFrequently: true });
+    let currentDecRawData = null; 
+    let decodeTimer = null;
+
+    function initDecodeImage(img) {
+        decCanvas.width = img.width; decCanvas.height = img.height;
+        decCtx.fillStyle = '#FFFFFF'; decCtx.fillRect(0, 0, img.width, img.height);
+        decCtx.drawImage(img, 0, 0);
+        currentDecRawData = decCtx.getImageData(0, 0, img.width, img.height);
+        
+        decCanvas.style.display = 'block';
+        document.getElementById('decPlaceholder').style.display = 'none';
+        triggerLiveDecode();
+    }
+
+    function triggerLiveDecode() {
+        if (!currentDecRawData) return;
+        clearTimeout(decodeTimer);
+        
+        decodeTimer = setTimeout(() => {
+            const step = parseInt(document.getElementById('qimStepSlider').value); 
+            const thres = parseFloat(document.getElementById('thresholdSlider').value) / 100;
+            const blur = parseInt(document.getElementById('blurSlider').value);
+            
+            let resData = processDecodeData(currentDecRawData, decCanvas.width, decCanvas.height, step, thres, blur);
+            decCtx.putImageData(resData, 0, 0);
+        }, 80);
+    }
+    
+    ['thresholdSlider', 'blurSlider'].forEach(id => {
+        document.getElementById(id).addEventListener('input', triggerLiveDecode);
+    });
+
+    document.getElementById('btnAutoDecode').addEventListener('click', () => {
+        if (!currentDecRawData) return;
+        document.getElementById('decLoader').style.display = 'flex';
+        document.getElementById('decProgressText').textContent = 'AI Otsu 智能寻优中...';
+        
+        setTimeout(() => {
+            const step = parseInt(document.getElementById('qimStepSlider').value);
+            const blur = parseInt(document.getElementById('blurSlider').value);
+            let blurredScores = calculateDecodeScores(currentDecRawData, decCanvas.width, decCanvas.height, step, blur);
+            let bestThres = getOtsuThreshold(blurredScores);
+            
+            const thresSlider = document.getElementById('thresholdSlider');
+            thresSlider.value = Math.floor(bestThres * 100);
+            document.getElementById('valThreshold').textContent = bestThres.toFixed(2);
+            
+            triggerLiveDecode();
+            document.getElementById('decLoader').style.display = 'none';
+        }, 50);
+    });
+
+    // === 导出系统 ===
+    function downloadSingle(canvasId, queue, activeIdx, mode, format) {
+        if (activeIdx === -1) return;
+        const originalName = queue[activeIdx].name.split('.')[0];
+        const canvas = document.getElementById(canvasId);
+        
+        const link = document.createElement('a');
+        const ext = format === 'image/jpeg' ? 'jpg' : 'png';
+        const suffix = mode === 'encode' ? 'wm' : 'decoded';
+        link.download = `${originalName}_${suffix}.${ext}`;
+        
+        const quality = format === 'image/jpeg' ? 0.85 : 1.0;
+        link.href = canvas.toDataURL(format, quality);
+        link.click();
+    }
+
+    document.getElementById('encSinglePngBtn').addEventListener('click', () => downloadSingle('encCanvas', encQueue, encActiveIndex, 'encode', 'image/png'));
+    document.getElementById('encSingleJpgBtn').addEventListener('click', () => downloadSingle('encCanvas', encQueue, encActiveIndex, 'encode', 'image/jpeg'));
+    document.getElementById('decSingleBtn').addEventListener('click', () => downloadSingle('decCanvas', decQueue, decActiveIndex, 'decode', 'image/png'));
+
+    async function processBatch(mode, exportFormat = 'image/jpeg') {
+        const queue = mode === 'encode' ? encQueue : decQueue;
+        if (queue.length === 0) return;
+        
+        const loader = document.getElementById(mode === 'encode' ? 'encLoader' : 'decLoader');
+        const progressTxt = document.getElementById(mode === 'encode' ? 'encProgressText' : 'decProgressText');
+        loader.style.display = 'flex';
+        
+        const zip = new JSZip();
+        const folderName = mode === 'encode' ? "watermarked_batch" : "decoded_batch";
+        const folder = zip.folder(folderName);
+        
+        const baseText = document.getElementById('watermarkText').value;
+        const step = parseInt(document.getElementById('qimStepSlider').value);
+        const density = parseInt(document.getElementById('densitySlider').value);
+        const sizeMult = parseInt(document.getElementById('sizeSlider').value) / 100;
+        const angleDeg = parseInt(document.getElementById('angleSlider').value);
+
+        const thres = parseFloat(document.getElementById('thresholdSlider').value) / 100;
+        const blur = parseInt(document.getElementById('blurSlider').value);
+
+        const offCanvas = document.createElement('canvas');
+        const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
+        for (let i = 0; i < queue.length; i++) {
+            progressTxt.textContent = `打包进度: ${i + 1} / ${queue.length}`;
+            await new Promise(r => setTimeout(r, 20)); 
+            
+            const img = queue[i].img;
+            offCanvas.width = img.width; offCanvas.height = img.height;
+            
+            if (mode === 'encode') {
+                offCtx.clearRect(0, 0, img.width, img.height);
+                offCtx.drawImage(img, 0, 0);
+                let data = offCtx.getImageData(0, 0, img.width, img.height);
+                
+                const finalParsedText = parseWatermarkText(baseText, queue[i], i);
+                let result = processEncodeData(data, img.width, img.height, finalParsedText, step, density, sizeMult, angleDeg);
+                
+                offCtx.putImageData(result.data, 0, 0);
+            } else {
+                offCtx.fillStyle = '#FFFFFF'; offCtx.fillRect(0, 0, img.width, img.height);
+                offCtx.drawImage(img, 0, 0);
+                let data = offCtx.getImageData(0, 0, img.width, img.height);
+                data = processDecodeData(data, img.width, img.height, step, thres, blur);
+                offCtx.putImageData(data, 0, 0);
+            }
+
+            const ext = mode === 'encode' ? (exportFormat==='image/jpeg'?'jpg':'png') : 'png';
+            const quality = mode === 'encode' && ext === 'jpg' ? 0.85 : 1.0;
+            const dataUrl = offCanvas.toDataURL(mode === 'encode' ? exportFormat : 'image/png', quality);
+            
+            const base64Data = dataUrl.split(',')[1];
+            const originalName = queue[i].name.split('.')[0];
+            const newName = `${originalName}_${mode === 'encode' ? 'wm' : 'decoded'}.${ext}`;
+            
+            folder.file(newName, base64Data, {base64: true});
+        }
+
+        progressTxt.textContent = '正在生成 ZIP 压缩包...';
+        await new Promise(r => setTimeout(r, 20));
+
+        zip.generateAsync({type:"blob"}).then(function(content) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `${folderName}_${Date.now()}.zip`;
+            link.click();
+            loader.style.display = 'none';
+        });
+    }
+
+    document.getElementById('encBatchJpgBtn').addEventListener('click', () => processBatch('encode', 'image/jpeg'));
+    document.getElementById('encBatchPngBtn').addEventListener('click', () => processBatch('encode', 'image/png'));
+    document.getElementById('decBatchBtn').addEventListener('click', () => processBatch('decode'));
+
+</script>
+</body>
+</html>
